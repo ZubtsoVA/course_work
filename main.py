@@ -129,10 +129,8 @@ def plot_results(trainer: Trainer, bs: BSParams):
     plt.show()
 
     # Статистика в консоль
-    int_rel_err = rel_error[mask_interior].mean()
     int_abs_err = np.abs(V_pred - V_true)[mask_interior].mean()
     print(f"\nInterior Validation (excl. boundaries):")
-    print(f"  Mean Relative Error : {int_rel_err * 100:.3f}%")
     print(f"  Mean Absolute Error : {int_abs_err:.4f}")
     print(f"  Points evaluated    : {mask_interior.sum()}")
 
