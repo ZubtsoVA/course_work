@@ -2,7 +2,7 @@
 
 # Physics-Informed CNN для уравнения Блэка-Шоулза
 
-Реализация Physics-Informed Convolutional Neural Network (PI-CNN) для решения уравнения Блэка-Шоулза с использованием архитектуры U-Net.
+Реализация Physics-Informed Convolutional Neural Network (PI-CNN) для решения уравнения Блэка-Шоулза.
 
 ## Описание
 
