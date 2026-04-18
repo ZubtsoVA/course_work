@@ -1,3 +1,5 @@
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ZubtsoVA/course_work/blob/main/run.ipynb)
+
 # Physics-Informed CNN для уравнения Блэка-Шоулза
 
 Реализация Physics-Informed Convolutional Neural Network (PI-CNN) для решения уравнения Блэка-Шоулза с использованием архитектуры U-Net.
