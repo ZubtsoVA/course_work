@@ -159,12 +159,26 @@ def count_parameters(model):
 # --------------------------
 def get_device():
     """Автоматически определяет лучшее доступное устройство"""
-    if torch.cuda.is_available():
-        return torch.device('cuda')
+    try:
+        import google.colab
+        IN_COLAB = True
+    except ImportError:
+        IN_COLAB = False
+    if IN_COLAB:
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            print(f"[Colab] Используется GPU: {torch.cuda.get_device_name(0)}")
+        else:
+            device = torch.device('cpu')
+            print("[Colab] GPU не найден, используется CPU")
     elif torch_directml.is_available():
-        return torch_directml.device()
+        device = torch_directml.device()
+        print(f"Using DirectML device: {torch_directml.device_name(0)}")
     else:
-        return torch.device('cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
+    return device
+
 
 if __name__ == "__main__":
 
