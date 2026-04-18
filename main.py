@@ -164,22 +164,28 @@ def get_device():
         IN_COLAB = True
     except ImportError:
         IN_COLAB = False
+
     if IN_COLAB:
+        # В Colab используем CUDA или CPU
         if torch.cuda.is_available():
             device = torch.device('cuda')
             print(f"[Colab] Используется GPU: {torch.cuda.get_device_name(0)}")
         else:
             device = torch.device('cpu')
             print("[Colab] GPU не найден, используется CPU")
+        return device
     else:
-        import torch_directml
-    if torch_directml.is_available():
-        device = torch_directml.device()
-        print(f"Using DirectML device: {torch_directml.device_name(0)}")
-    else:
+        try:
+            import torch_directml
+            if torch_directml.is_available():
+                device = torch_directml.device()
+                print(f"[Local] Используется DirectML: {torch_directml.device_name(0)}")
+                return device
+        except ImportError:
+            pass
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
-    return device
+        print(f"[Local] Используется: {device}")
+        return device
 
 
 if __name__ == "__main__":
