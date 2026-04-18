@@ -157,15 +157,19 @@ def count_parameters(model):
 # --------------------------
 # 7. Main
 # --------------------------
-if __name__ == "__main__":
-    # Device selection
-    if torch_directml.is_available():
-        device = torch_directml.device()
-        print(f"Using DirectML device: {torch_directml.device_name(0)}")
+def get_device():
+    """Автоматически определяет лучшее доступное устройство"""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    elif torch_directml.is_available():
+        return torch_directml.device()
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
+        return torch.device('cpu')
 
+if __name__ == "__main__":
+
+    device = get_device()
+    print(f"Using device: {device}")
     # Black‑Scholes parameters
     bs = BSParams(
         r=0.05, sigma=0.20, K=100.0, T=1.0, S_max=700.0, option="call"
