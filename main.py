@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-import torch_directml
+
 
 from utils import BSParams
 from model import PiCNN_BlackScholes, Trainer
@@ -171,7 +171,9 @@ def get_device():
         else:
             device = torch.device('cpu')
             print("[Colab] GPU не найден, используется CPU")
-    elif torch_directml.is_available():
+    else:
+        import torch_directml
+    if torch_directml.is_available():
         device = torch_directml.device()
         print(f"Using DirectML device: {torch_directml.device_name(0)}")
     else:
