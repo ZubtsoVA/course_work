@@ -1,4 +1,4 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ZubtsoVA/course_work/blob/main/run.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ZubtsoVA/course_work/blob/main/run.ipynb?force=True)
 
 # Physics-Informed CNN для уравнения Блэка-Шоулза
 
