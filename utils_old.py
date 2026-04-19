@@ -14,6 +14,10 @@ from typing import Tuple
 # --------------------------
 # 0. Cubic Stretching
 # --------------------------
+import torch
+import math
+
+
 class CubicStretching:
     """
     Реализация Eq. (2) из статьи 2210.02541v4.
@@ -29,18 +33,37 @@ class CubicStretching:
         self.device = device
 
         # Решение кубических уравнений для c1 и c2
-        # 1/6 * c^3 + c + Q = 0
-        self.c1 = self._solve_cubic((B - S_min) / alpha)
-        self.c2 = self._solve_cubic((B - S_max) / alpha)
+        self.c1 = self._solve_depressed_cubic((B - S_min) / alpha)
+        self.c2 = self._solve_depressed_cubic((B - S_max) / alpha)
 
-    def _solve_cubic(self, Q: float) -> float:
-        """Решает 1/6 c^3 + c + Q = 0 методом Ньютона"""
-        c = -Q  # Начальное приближение
-        for _ in range(5):  # 5 итераций достаточно для машинной точности
-            f = (1 / 6) * c ** 3 + c + Q
-            df = (1 / 2) * c ** 2 + 1
-            c = c - f / df
-        return c
+        # Преобразуем в тензоры PyTorch
+        self.c1_tensor = torch.tensor(self.c1, device=device, dtype=torch.float32)
+        self.c2_tensor = torch.tensor(self.c2, device=device, dtype=torch.float32)
+
+    def _solve_depressed_cubic(self, Q: float) -> float:
+        """
+        Для p > 0 всегда один вещественный корень.
+        Используем гиперболическую формулу (более стабильную).
+        """
+        import math
+
+        p = self.chi  # p > 0
+        q = self.chi * Q
+
+        # Для p > 0 используем гиперболическую формулу
+        # Это гарантирует вещественный результат
+        sqrt_p = math.sqrt(p)
+
+        # Аргумент для arccosh
+        arg = abs(q) / (2 * p * sqrt_p / (3 * math.sqrt(3)))
+        arg = max(1.0, arg)  # Чтобы избежать проблем с arccosh
+
+        if q >= 0:
+            c = -2 * sqrt_p * math.cosh(math.acosh(arg) / 3)
+        else:
+            c = 2 * sqrt_p * math.cosh(math.acosh(arg) / 3)
+
+        return float(c)
 
     def compute_metrics(self, u: torch.Tensor):
         """
@@ -48,21 +71,20 @@ class CubicStretching:
         Используется для преобразования производных CNN.
         """
         # Линейная интерполяция коэффициентов: L(u) = c2*u + c1*(1-u)
-        L = self.c2 * u + self.c1 * (1 - u)
-        dL_du = self.c2 - self.c1  # Константа
+        L = self.c2_tensor * u + self.c1_tensor * (1 - u)
+        dL_du = self.c2_tensor - self.c1_tensor  # Константа
 
-        # S(u)
+        # S(u) = B + alpha * [1/chi * L^3 + L]
         term = (1 / self.chi) * L ** 3 + L
         S = self.B + self.alpha * term
 
-        # dS/du = alpha * dL_du * (0.5*L^2 + 1)
+        # dS/du = alpha * dL_du * (L^2/2 + 1)
         dS_du = self.alpha * dL_du * (0.5 * L ** 2 + 1.0)
 
         # d2S/du2 = alpha * dL_du^2 * L
         d2S_du2 = self.alpha * (dL_du ** 2) * L
 
         return S, dS_du, d2S_du2
-
 
 # --------------------------
 # 1. Black-Scholes Parameters
@@ -117,8 +139,9 @@ class FDOperators:
 
         # First derivative ∂/∂S_norm (central difference)
         kernel_dS = torch.zeros(1, 1, 3, 1, device=device)
-        kernel_dS[0, 0, 0, 0] = -1.0
         kernel_dS[0, 0, 2, 0] = 1.0
+        kernel_dS[0, 0, 1, 0] = 0.0
+        kernel_dS[0, 0, 0, 0] = -1.0
         kernel_dS = kernel_dS / 2 / dS_norm  # Scale by grid spacing
         self.conv_dS = nn.Conv2d(1, 1, kernel_size=(3, 1), padding=(1, 0), padding_mode='replicate', bias=False, )
         self.conv_dS.weight = nn.Parameter(kernel_dS, requires_grad=False)
@@ -134,8 +157,9 @@ class FDOperators:
 
         # Time derivative ∂/∂t_norm
         kernel_dt = torch.zeros(1, 1, 1, 3, device=device)
-        kernel_dt[0, 0, 0, 0] = -1.0
         kernel_dt[0, 0, 0, 2] = 1.0
+        kernel_dt[0, 0, 0, 1] = 0.0
+        kernel_dt[0, 0, 0, 0] = -1.0
         kernel_dt = kernel_dt / 2 / dt_norm
         self.conv_dt = nn.Conv2d(1, 1, kernel_size=(1, 3), padding=(0,1), padding_mode='replicate', bias=False, )
         self.conv_dt.weight = nn.Parameter(kernel_dt, requires_grad=False)
@@ -161,7 +185,12 @@ class BSLoss(nn.Module):
         self.lambda_violation = lambda_violation
         self.device = device
         self.V_scale = self.bs.S_max
+        self.du = 1.0 / (N_S - 1)
+        self.dt_norm = 1.0 / (N_t - 1)
         self.S_phys, self.S_u, self.S_uu = stretching.compute_metrics(S_grid)
+        self.S_norm = self.S_phys / self.bs.S_max
+        self.S_u_norm = self.S_u / self.bs.S_max
+        self.S_uu_norm = self.S_uu / self.bs.S_max
         self.t_phys = t_grid * bs.T
         self.N_S = N_S
         self.N_t = N_t
@@ -169,10 +198,11 @@ class BSLoss(nn.Module):
         # Physical grid spacings
         self.dS_phys = self.bs.S_max / (N_S - 1)
         self.dt_phys = self.bs.T / (N_t - 1)
-
+        self.alpha = 2 * bs.r / (bs.sigma ** 2)
         self.S_grid_norm = S_grid
         self.t_grid_norm = t_grid
-        self.fd = FDOperators(device, dS_norm=1.0/(N_S-1), dt_norm=1.0/(N_t-1))
+        self.tau_max = 0.5 * bs.sigma ** 2 * bs.T
+        self.fd = FDOperators(device, 1/(N_S - 1), self.tau_max/(N_t - 1))
 
         # Physical coordinates
         self.S_phys_for_mask = self.S_grid_norm * self.bs.S_max
@@ -184,8 +214,6 @@ class BSLoss(nn.Module):
 
         # Create masks
         eps = 1e-2
-        S_idx = torch.arange(N_S_grid, device=device)
-        t_idx = torch.arange(N_t_grid, device=device)
         S_indices = torch.linspace(0, 1, N_S_grid, device=device)
         t_indices = torch.linspace(0, 1, N_t_grid, device=device)
         S_mesh, _ = torch.meshgrid(S_indices, t_indices)
@@ -221,29 +249,28 @@ class BSLoss(nn.Module):
         self.n_itm = self.mask_itm.sum()
 
     def forward(self, V_norm: torch.Tensor) -> Tuple[torch.Tensor, dict]:
-        # Convert to physical value
         S_norm = self.S_grid_norm
         V_u = self.fd.dS(V_norm)
         V_uu = self.fd.d2S(V_norm)
         V_t = self.fd.dt(V_norm)
-        S_u = self.S_u
-        S_uu = self.S_uu
-        # 2. Применяем правило цепочки для перехода к физическим производным
-        # V_S = V_u / S_u
-        V_S = V_u / S_u
 
-        # V_SS = (V_uu * S_u - V_u * S_uu) / (S_u)^3
-        V_SS = (V_uu * S_u - V_u * S_uu) / (S_u ** 3)
 
-        # 3. Формируем PDE residual в физических переменных
-        # ∂V/∂t = (1/T) * V_t
-        V_t_phys = V_t / self.bs.T
 
-        residual = V_t_phys + \
-                   0.5 * self.bs.sigma ** 2 * S_norm ** 2 * V_SS + \
-                   self.bs.r * S_norm * V_S - \
-                   self.bs.r * V_norm
+        V_S = V_u / self.S_u_norm
 
+
+        V_SS = (V_uu * self.S_u_norm - V_u * self.S_uu_norm) / (self.S_u_norm ** 3)
+        V_SS_max = 100.0  # Reasonable for normalized option price
+        V_SS = torch.clamp(V_SS, -V_SS_max, V_SS_max)
+
+
+        residual = V_t - \
+                    self.S_norm ** 2 * V_SS - \
+                   self.alpha * self.S_norm * V_S + \
+                   self.alpha * V_norm
+        #print(V_t.mean(), (self.S_norm ** 2 * V_SS).mean(), (self.alpha * self.S_norm * V_S).mean(), self.alpha * V_norm.mean())
+        #print(V_t_phys.mean(), (0.5 * self.bs.sigma ** 2 * self.S_norm ** 2* V_SS).mean(), (self.bs.r * self.S_norm * V_S).mean(), -self.bs.r * V_norm.abs().mean())
+        #print(S_u.abs().mean(), S_uu.abs().mean(), V_S.abs().mean(), V_SS.abs().mean(), V_uu.mean(), V_t_phys.abs().mean())
         # Добавить небольшую вязкость для стабилизации
         # viscosity = 0.001 * self.dS_phys * V_SS.abs().mean()
         # Black-Scholes residual real
@@ -253,6 +280,8 @@ class BSLoss(nn.Module):
         # PDE loss (interior only)
 
         pde_loss = ((residual * self.mask_interior) ** 2).sum() / self.n_int # + viscosity
+
+        wrong_sign_dvdt = ((torch.relu(V_t))**2).mean()
 
         # Boundary conditions
 
@@ -274,6 +303,8 @@ class BSLoss(nn.Module):
         total = self.lambda_pde * pde_loss + \
                 self.lambda_bc * (loss_Smax) + \
                 self.lambda_tc * loss_T
+
+
 
 
         return total, {
