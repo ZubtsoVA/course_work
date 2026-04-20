@@ -93,7 +93,7 @@ class BSLoss(nn.Module):
         self.S_grid_norm = S_grid_norm.to(device)
         self.t_grid_norm = t_grid_norm.to(device)
 
-        t_max_hat = (bs.sigma ** 2 / 2) * bs.T
+        t_max_hat = (bs.sigma ** 2 / 2) * self.bs.T
         self.t_hat = (t_grid_norm * t_max_hat).to(device)
         self.t_max_hat = t_max_hat
         self.h_tau_hat = t_max_hat / (N_t - 1)
@@ -104,7 +104,7 @@ class BSLoss(nn.Module):
         self.mask_T = torch.zeros_like(S_grid_norm)
         self.mask_S0.index_fill_(dim=2, index=torch.tensor([0], device=device), value=1.0)
         self.mask_Smax.index_fill_(dim=2, index=torch.tensor([N_S - 1], device=device), value=1.0)
-        self.mask_T.index_fill_(dim=3, index=torch.tensor([N_t - 1], device=device), value=1.0)
+        self.mask_T.index_fill_(dim=3, index=torch.tensor([0], device=device), value=1.0)
 
         # Внутренние точки (исключаем 2 граничных слоя по S и t для стабильных центральных разностей)
         self.mask_interior = (1.0 - self.mask_S0 - self.mask_Smax - self.mask_T).clamp(0, 1)
@@ -135,7 +135,6 @@ class BSLoss(nn.Module):
         dV_dS_b = (V_mid - V_left) / h_L.clamp(min=1e-8)
         dV_dS = 0.5 * (dV_dS_f + dV_dS_b)
         d2V_dS2 = 2.0 * (dV_dS_f - dV_dS_b) / (h_L + h_R).clamp(min=1e-8)
-
         dV_dtau = (V[:, :, :, 1:] - V[:, :, :, :-1]) / self.h_tau_hat
         dV_dtau_mid = dV_dtau[:, :, 1:-1, 1:]
         # 2. PDE Residual безразмерный
@@ -145,26 +144,27 @@ class BSLoss(nn.Module):
         #print(d2V_dS2.mean(), h_left.mean(), h_right.mean())
         # 3. Граничные условия
 
-        t_phys = self.bs.T * (1.0 - self.t_grid_norm)
+        t_phys = 1.0 - self.t_grid_norm
+        #print(self.bs.far_field_bc(self.S_grid_norm, t_phys ).max())
         loss_Smax = self.masked_mean((V - self.bs.far_field_bc(self.S_grid_norm, t_phys)) ** 2, self.mask_Smax)
+        #print(self.bs.far_field_bc(self.S_grid_norm, t_phys))
         loss_S0 = self.masked_mean(V ** 2, self.mask_S0)
         loss_boundary = loss_S0 + loss_Smax
-        payoff = torch.clamp(self.S_grid_norm - self.bs.K / self.bs.S_max, min=0.0)
-        loss_T = self.masked_mean((V - payoff) ** 2, self.mask_T)
+
         violation_loss = torch.mean(torch.relu(-dV_dS)) + torch.mean(torch.relu(-d2V_dS2))
 
         #violation_loss += (torch.mean(torch.relu(-dV_dS)) +
          #                 torch.mean(torch.relu(-d2V_dS2)) + torch.mean(torch.relu(dV_dt)))
         total = (self.lambda_pde * pde_loss +
-                 self.lambda_bc * (loss_boundary + loss_S0) +
-                 self.lambda_tc * loss_T + self.lambda_violation * violation_loss)
+                 self.lambda_bc * (loss_boundary) +
+                 self.lambda_violation * violation_loss)
 
         #self.lambda_violation * (violation_loss))
 
         return total, {
             "pde": pde_loss.item(),
             "boundary": loss_boundary.item(),
-            "T": loss_T.item(),
+            "T": 0,
             "total": total.item()
         }
 

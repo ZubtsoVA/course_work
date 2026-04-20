@@ -60,12 +60,17 @@ class PiCNN_BlackScholes(nn.Module):
         # Kaiming для conv слоёв
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                with torch.no_grad():
+                    m.weight.data *= 0.9
+
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
         # Специальная инициализация выходного слоя
         with torch.no_grad():
-            nn.init.xavier_uniform_(self.out_conv.weight, gain=0.1)
-            nn.init.constant_(self.out_conv.bias, 0.3)
+            nn.init.xavier_uniform_(self.out_conv.weight, gain=0.01)
+            nn.init.constant_(self.out_conv.bias, 0.2)
 
     def forward(self, x):
         e1 = self.enc1(x)
@@ -92,7 +97,7 @@ class PiCNN_BlackScholes(nn.Module):
         tau_norm = x[:, 1:2, :, :]
         # Жесткое условие: V(S, tau=0) = payoff(S) ровно
         payoff = torch.clamp(S_norm - self.bs.K / self.bs.S_max, min=0.0)
-        V = payoff + tau_norm * nn_out
+        V = tau_norm * nn_out + payoff
         return V
 
 
@@ -133,8 +138,8 @@ class Trainer:
         )
 
 
-        self.optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-6)
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=1e-6)
+        self.optimizer = optim.Adamax(model.parameters(), lr=lr, weight_decay=1e-6)
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=1e-8)
 
         self.history = {"loss": [], "pde": [], "boundary": [], "T": []}
 
@@ -147,9 +152,9 @@ class Trainer:
             V_pred = self.model(self.coords_input)
             loss, comps = self.criterion(V_pred)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            #torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
-            self.scheduler.step(loss)
+            self.scheduler.step()
 
             self.history["loss"].append(comps["total"])
             self.history["pde"].append(comps["pde"])
@@ -159,7 +164,7 @@ class Trainer:
             if epoch % verbose_freq == 0 or epoch == 1:
                 lr = self.optimizer.param_groups[0]['lr']
                 print(f"Epoch {epoch:4d} | Loss {comps['total']:.2e} | PDE {comps['pde']:.2e} "
-                      f"| Smax {comps['boundary']:.2e} | T {comps['T']:.2e} | LR {lr:.2e}")
+                      f"| boundary {comps['boundary']:.2e} | T {comps['T']:.2e} | LR {lr:.2e}")
 
     @torch.no_grad()
     def predict_on_grid(self):

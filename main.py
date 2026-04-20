@@ -199,27 +199,17 @@ if __name__ == "__main__":
     )
 
     # Grid resolution (N_S × N_t)
-    grid_shape = (256, 256)
+    grid_shape = (64, 64)
 
-
-    def init_weights(m):
-        if isinstance(m, nn.Conv2d):
-            if m == model.out_conv:
-                # Инициализация последнего слоя
-                nn.init.normal_(m.weight, mean=0.0, std=0.001)
-            else:
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
     # Model
-    model = PiCNN_BlackScholes(bs, activation="relu", features=[16, 32, 64, 128 ]).to(device)
+    model = PiCNN_BlackScholes(bs, activation="gelu", features=[16, 32, 64, 128 ]).to(device)
     total_params = count_parameters(model)
     print(f"Total trainable parameters: {total_params:,}")
     # FIXED: Adjusted hyperparameters
     trainer = Trainer(
         model, bs, grid_shape=grid_shape,
-        lr=5e-4, epochs=4000, device=device,  # More epochs
-        lambda_pde=1.0, lambda_bc=50.0, lambda_tc=0.0, lambda_violation= 1.0
+        lr=1e-4, epochs=5000, device=device,  # More epochs
+        lambda_pde=10.0, lambda_bc=30, lambda_tc=30.0, lambda_violation= 1.0
     )
 
     print("Training PI‑CNN for Black–Scholes")
