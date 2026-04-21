@@ -88,9 +88,7 @@ class BSLoss(nn.Module):
         self.lambda_violation = lambda_violation
         self.device = device
         self.alpha = 2 * bs.r / (bs.sigma ** 2)
-        self.huber_delta = 0.01
         self.S_phys = (S_grid_norm * (bs.S_max - bs.S_min) + bs.S_min) / bs.S_max
-        self.S_grid_norm = S_grid_norm.to(device)
         self.t_grid_norm = t_grid_norm.to(device)
 
         t_max_hat = (bs.sigma ** 2 / 2) * self.bs.T
@@ -146,18 +144,18 @@ class BSLoss(nn.Module):
 
         t_phys = 1.0 - self.t_grid_norm
         #print(self.bs.far_field_bc(self.S_grid_norm, t_phys ).max())
-        loss_Smax = self.masked_mean((V - self.bs.far_field_bc(self.S_grid_norm, t_phys)) ** 2, self.mask_Smax)
+        #loss_Smax = self.masked_mean((V - self.bs.far_field_bc(self.S_phys, t_phys)) ** 2, self.mask_Smax)
         #print(self.bs.far_field_bc(self.S_grid_norm, t_phys))
-        loss_S0 = self.masked_mean(V ** 2, self.mask_S0)
-        loss_boundary = loss_S0 + loss_Smax
-
-        violation_loss = torch.mean(torch.relu(-dV_dS)) + torch.mean(torch.relu(-d2V_dS2))
+        loss_S0 = self.masked_mean(V ** 2, self.mask_S0) * 100
+        loss_boundary = loss_S0 #+ loss_Smax
+        #violation_loss = ((torch.relu(dV_dtau - 1))**2).mean()
+        #violation_loss = torch.mean(torch.relu(-dV_dS)) + torch.mean(torch.relu(-d2V_dS2))
 
         #violation_loss += (torch.mean(torch.relu(-dV_dS)) +
          #                 torch.mean(torch.relu(-d2V_dS2)) + torch.mean(torch.relu(dV_dt)))
         total = (self.lambda_pde * pde_loss +
-                 self.lambda_bc * (loss_boundary) +
-                 self.lambda_violation * violation_loss)
+                 self.lambda_bc * loss_boundary) #+
+                 #self.lambda_violation * violation_loss)
 
         #self.lambda_violation * (violation_loss))
 

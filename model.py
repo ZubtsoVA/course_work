@@ -138,15 +138,15 @@ class Trainer:
         )
 
 
-        self.optimizer = optim.Adamax(model.parameters(), lr=lr, weight_decay=1e-6)
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=1e-8)
+        self.optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=1e-10)
 
         self.history = {"loss": [], "pde": [], "boundary": [], "T": []}
 
     def train(self, verbose_freq=200):
         self.model.train()
         # Scale output to reasonable range
-        assert self.criterion.S_grid_norm.max() <= 1.0 + 1e-6
+        assert self.criterion.S_phys.max() <= 1.0 + 1e-6
         for epoch in range(1, self.epochs + 1):
             self.optimizer.zero_grad()
             V_pred = self.model(self.coords_input)

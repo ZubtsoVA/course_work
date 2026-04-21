@@ -422,20 +422,20 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
     # Black‑Scholes parameters
     bs = BSParams(
-        r=0.08, sigma=0.28, K=2000.0, T=3.0, S_max=7000.0, option="call"
+        r=0.08, sigma=0.4, K=100.0, T=3.0, S_max=300.0, option="call"
     )
 
     # Grid resolution (N_S × N_t)
-    grid_shape = (64, 64)
+    grid_shape = (256, 256)
 
     # Model
-    model = PiCNN_BlackScholes(bs, activation="gelu", features=[16, 32, 64, 128 ]).to(device)
+    model = PiCNN_BlackScholes(bs, activation="gelu", features=[32, 64, 128, 256 ]).to(device)
     total_params = count_parameters(model)
     print(f"Total trainable parameters: {total_params:,}")
     # FIXED: Adjusted hyperparameters
     trainer = Trainer(
         model, bs, grid_shape=grid_shape,
-        lr=1e-4, epochs=5000, device=device,  # More epochs
+        lr=1e-4, epochs=7000, device=device,  # More epochs
         lambda_pde=10.0, lambda_bc=30, lambda_tc=30.0, lambda_violation= 1.0
     )
 
