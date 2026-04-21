@@ -155,6 +155,233 @@ def plot_results(trainer: Trainer, bs: BSParams):
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+
+def plot_3d_comparison(trainer: Trainer, bs: BSParams):
+    """
+    Строит 3D графики аналитического решения и решения модели в одном окне.
+
+    Parameters:
+    -----------
+    trainer : Trainer
+        Обученный тренер с моделью
+    bs : BSParams
+        Параметры модели Black-Scholes
+    """
+    from mpl_toolkits.mplot3d import Axes3D
+
+    # Получаем предсказания модели
+    S_grid, t_grid, V_pred = trainer.predict_on_grid()
+
+    # Получаем аналитическое решение
+    V_true = bs.analytical_price(S_grid, t_grid)
+
+    # Создаем фигуру с двумя 3D подграфиками
+    fig = plt.figure(figsize=(16, 8))
+
+    # Первый подграфик: Аналитическое решение
+    ax1 = fig.add_subplot(121, projection='3d')
+    surf1 = ax1.plot_surface(S_grid, t_grid, V_true,
+                             cmap='viridis',
+                             linewidth=0,
+                             antialiased=True,
+                             alpha=0.9)
+    ax1.set_xlabel('S (Asset Price)', fontsize=10, labelpad=10)
+    ax1.set_ylabel('t (Time)', fontsize=10, labelpad=10)
+    ax1.set_zlabel('V (Option Price)', fontsize=10, labelpad=10)
+    ax1.set_title(f'Analytical Solution\n{bs.option.capitalize()} Option, r={bs.r}, σ={bs.sigma}',
+                  fontsize=12, fontweight='bold')
+    ax1.view_init(elev=25, azim=-60)
+    fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10, label='Option Price')
+
+    # Второй подграфик: Решение модели (PI-CNN)
+    ax2 = fig.add_subplot(122, projection='3d')
+    surf2 = ax2.plot_surface(S_grid, t_grid, V_pred,
+                             cmap='plasma',
+                             linewidth=0,
+                             antialiased=True,
+                             alpha=0.9)
+    ax2.set_xlabel('S (Asset Price)', fontsize=10, labelpad=10)
+    ax2.set_ylabel('t (Time)', fontsize=10, labelpad=10)
+    ax2.set_zlabel('V (Option Price)', fontsize=10, labelpad=10)
+    ax2.set_title(f'PI-CNN Prediction\n{bs.option.capitalize()} Option',
+                  fontsize=12, fontweight='bold')
+    ax2.view_init(elev=25, azim=-60)
+    fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10, label='Option Price')
+
+    plt.suptitle('Black-Scholes Option Pricing: Analytical vs PI-CNN',
+                 fontsize=14, fontweight='bold', y=0.98)
+    plt.tight_layout()
+    plt.savefig("pi_cnn_3d_comparison.png", dpi=150, bbox_inches="tight")
+    plt.show()
+
+
+def plot_3d_superimposed(trainer: Trainer, bs: BSParams, alpha_true=0.6, alpha_pred=0.4):
+    """
+    Строит наложенные 3D графики аналитического решения и решения модели.
+
+    Parameters:
+    -----------
+    trainer : Trainer
+        Обученный тренер с моделью
+    bs : BSParams
+        Параметры модели Black-Scholes
+    alpha_true : float
+        Прозрачность аналитического решения (0-1)
+    alpha_pred : float
+        Прозрачность решения модели (0-1)
+    """
+    from mpl_toolkits.mplot3d import Axes3D
+
+    # Получаем предсказания модели
+    S_grid, t_grid, V_pred = trainer.predict_on_grid()
+
+    # Получаем аналитическое решение
+    V_true = bs.analytical_price(S_grid, t_grid)
+
+    # Вычисляем ошибку
+    error = np.abs(V_pred - V_true)
+
+    # Создаем фигуру с двумя 3D подграфиками
+    fig = plt.figure(figsize=(18, 6))
+
+    # Первый подграфик: Наложенные поверхности
+    ax1 = fig.add_subplot(131, projection='3d')
+
+    # Аналитическое решение (сетка)
+    surf_true = ax1.plot_surface(S_grid, t_grid, V_true,
+                                 cmap='viridis',
+                                 linewidth=0,
+                                 antialiased=True,
+                                 alpha=alpha_true,
+                                 label='Analytical')
+
+    # Решение модели (сетка)
+    surf_pred = ax1.plot_surface(S_grid, t_grid, V_pred,
+                                 cmap='plasma',
+                                 linewidth=0,
+                                 antialiased=True,
+                                 alpha=alpha_pred,
+                                 label='PI-CNN')
+
+    ax1.set_xlabel('S (Asset Price)', fontsize=9, labelpad=8)
+    ax1.set_ylabel('t (Time)', fontsize=9, labelpad=8)
+    ax1.set_zlabel('V (Option Price)', fontsize=9, labelpad=8)
+    ax1.set_title('Superimposed Solutions\nAnalytical (green) + PI-CNN (orange)',
+                  fontsize=11, fontweight='bold')
+    ax1.view_init(elev=25, azim=-60)
+
+    # Второй подграфик: Разность (ошибка)
+    ax2 = fig.add_subplot(132, projection='3d')
+    surf_error = ax2.plot_surface(S_grid, t_grid, error,
+                                  cmap='hot_r',
+                                  linewidth=0,
+                                  antialiased=True,
+                                  alpha=0.9)
+    ax2.set_xlabel('S (Asset Price)', fontsize=9, labelpad=8)
+    ax2.set_ylabel('t (Time)', fontsize=9, labelpad=8)
+    ax2.set_zlabel('|Error|', fontsize=9, labelpad=8)
+    ax2.set_title(f'Absolute Error\nMax: {error.max():.4f}, Mean: {error.mean():.4f}',
+                  fontsize=11, fontweight='bold')
+    ax2.view_init(elev=25, azim=-60)
+    fig.colorbar(surf_error, ax=ax2, shrink=0.5, aspect=10, label='Absolute Error')
+
+    # Третий подграфик: Относительная ошибка (%)
+    rel_error = np.abs(V_pred - V_true) / (np.abs(V_true) + 1e-8) * 100
+
+    ax3 = fig.add_subplot(133, projection='3d')
+    surf_rel = ax3.plot_surface(S_grid, t_grid, rel_error,
+                                cmap='coolwarm',
+                                linewidth=0,
+                                antialiased=True,
+                                alpha=0.9,
+                                vmin=0, vmax=np.percentile(rel_error, 95))
+    ax3.set_xlabel('S (Asset Price)', fontsize=9, labelpad=8)
+    ax3.set_ylabel('t (Time)', fontsize=9, labelpad=8)
+    ax3.set_zlabel('Relative Error (%)', fontsize=9, labelpad=8)
+    ax3.set_title(f'Relative Error (%)\nMax: {rel_error.max():.2f}%, Mean: {rel_error.mean():.2f}%',
+                  fontsize=11, fontweight='bold')
+    ax3.view_init(elev=25, azim=-60)
+    fig.colorbar(surf_rel, ax=ax3, shrink=0.5, aspect=10, label='Relative Error (%)')
+
+    plt.suptitle('Black-Scholes: Analytical vs PI-CNN Comparison',
+                 fontsize=14, fontweight='bold', y=0.98)
+    plt.tight_layout()
+    plt.savefig("pi_cnn_3d_superimposed.png", dpi=150, bbox_inches="tight")
+    plt.show()
+
+    # Вывод статистики
+    print("\n=== 3D Comparison Statistics ===")
+    print(f"Analytical Solution:  min={V_true.min():.4f}, max={V_true.max():.4f}, mean={V_true.mean():.4f}")
+    print(f"PI-CNN Prediction:    min={V_pred.min():.4f}, max={V_pred.max():.4f}, mean={V_pred.mean():.4f}")
+    print(f"Absolute Error:       min={error.min():.4e}, max={error.max():.4f}, mean={error.mean():.4f}")
+    print(f"Relative Error:       min={rel_error.min():.2f}%, max={rel_error.max():.2f}%, mean={rel_error.mean():.2f}%")
+
+
+def plot_3d_contour_comparison(trainer: Trainer, bs: BSParams):
+    """
+    Строит 3D графики с контурными линиями для лучшей визуализации.
+    """
+    from mpl_toolkits.mplot3d import Axes3D
+
+    # Получаем данные
+    S_grid, t_grid, V_pred = trainer.predict_on_grid()
+    V_true = bs.analytical_price(S_grid, t_grid)
+
+    fig = plt.figure(figsize=(16, 7))
+
+    # Первый график: Аналитическое решение с контурами
+    ax1 = fig.add_subplot(121, projection='3d')
+    surf1 = ax1.plot_surface(S_grid, t_grid, V_true,
+                             cmap='viridis',
+                             linewidth=0,
+                             antialiased=True,
+                             alpha=0.7)
+
+    # Добавляем контурные линии на поверхность
+    contour_levels = np.linspace(V_true.min(), V_true.max(), 15)
+    ax1.contour(S_grid, t_grid, V_true,
+                levels=contour_levels,
+                zdir='z',
+                offset=V_true.min() - 0.1 * (V_true.max() - V_true.min()),
+                cmap='viridis',
+                alpha=0.6)
+
+    ax1.set_xlabel('S (Asset Price)', fontsize=10, labelpad=10)
+    ax1.set_ylabel('t (Time)', fontsize=10, labelpad=10)
+    ax1.set_zlabel('V (Option Price)', fontsize=10, labelpad=10)
+    ax1.set_title('Analytical Solution with Contours', fontsize=12, fontweight='bold')
+    ax1.view_init(elev=30, azim=-45)
+    fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)
+
+    # Второй график: Решение модели с контурами
+    ax2 = fig.add_subplot(122, projection='3d')
+    surf2 = ax2.plot_surface(S_grid, t_grid, V_pred,
+                             cmap='plasma',
+                             linewidth=0,
+                             antialiased=True,
+                             alpha=0.7)
+
+    # Добавляем контурные линии
+    ax2.contour(S_grid, t_grid, V_pred,
+                levels=contour_levels,
+                zdir='z',
+                offset=V_pred.min() - 0.1 * (V_pred.max() - V_pred.min()),
+                cmap='plasma',
+                alpha=0.6)
+
+    ax2.set_xlabel('S (Asset Price)', fontsize=10, labelpad=10)
+    ax2.set_ylabel('t (Time)', fontsize=10, labelpad=10)
+    ax2.set_zlabel('V (Option Price)', fontsize=10, labelpad=10)
+    ax2.set_title('PI-CNN Prediction with Contours', fontsize=12, fontweight='bold')
+    ax2.view_init(elev=30, azim=-45)
+    fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)
+
+    plt.suptitle('Black-Scholes: 3D Surfaces with Contour Lines',
+                 fontsize=14, fontweight='bold', y=0.98)
+    plt.tight_layout()
+    plt.savefig("pi_cnn_3d_contour.png", dpi=150, bbox_inches="tight")
+    plt.show()
+
 # --------------------------
 # 7. Main
 # --------------------------
@@ -220,3 +447,8 @@ if __name__ == "__main__":
 
     print("\nGenerating plots...")
     plot_results(trainer, bs)
+
+    print("\nGenerating 3D comparison plots...")
+    plot_3d_comparison(trainer, bs)
+    plot_3d_superimposed(trainer, bs)
+    plot_3d_contour_comparison(trainer, bs)
