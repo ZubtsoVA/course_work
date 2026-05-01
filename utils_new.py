@@ -48,15 +48,15 @@ class BSParams:
 
     def terminal_payoff(self, S: torch.Tensor) -> torch.Tensor:
         if self.option == "call":
-            return torch.nn.functional.softplus(S - self.K / self.S_max, beta=50)
+            return torch.relu(S - self.K / self.S_max)
         else:
-            return torch.nn.functional.softplus(self.K / self.S_max - S, beta=50)
+            return torch.relu(self.K / self.S_max - S)
 
     def far_field_bc(self, S: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         """Boundary condition at S = S_max."""
         if self.option == "call":
-            tau = 1 - t
-            return 1 - self.K * torch.exp(-self.r * tau) / self.S_max
+            t *= self.T
+            return 1 - self.K * torch.exp(-self.r * t) / self.S_max
 
         else:
             return torch.zeros_like(S)
@@ -98,11 +98,9 @@ class BSLoss(nn.Module):
         # Шаги по безразмерной сетке
         self.h_t_hat = t_max_hat / (N_t - 1)
         self.mask_S0 = torch.zeros_like(S_grid_norm)
-        self.mask_Smax = torch.zeros_like(S_grid_norm)
+        self.mask_Smax = (self.S_phys > 0.95).float()
         self.mask_T = torch.zeros_like(S_grid_norm)
-        self.mask_S0.index_fill_(dim=2, index=torch.tensor([0], device=device), value=1.0)
-        self.mask_Smax.index_fill_(dim=2, index=torch.tensor([N_S - 1], device=device), value=1.0)
-        self.mask_T.index_fill_(dim=3, index=torch.tensor([0], device=device), value=1.0)
+        self.mask_S0 = (self.S_phys < 0.04).float()
 
         # Внутренние точки (исключаем 2 граничных слоя по S и t для стабильных центральных разностей)
         self.mask_interior = (1.0 - self.mask_S0 - self.mask_Smax - self.mask_T).clamp(0, 1)
@@ -127,6 +125,7 @@ class BSLoss(nn.Module):
         V_right = V[:, :, 2:, 1:-1]
         S_left = self.S_phys[:, :, :-2, 1:-1]
         S_right = self.S_phys[:, :, 2:, 1:-1]
+
         h_L = S_mid - S_left
         h_R = S_right - S_mid
         dV_dS_f = (V_right - V_mid) / h_R.clamp(min=1e-8)
@@ -142,20 +141,19 @@ class BSLoss(nn.Module):
         #print(d2V_dS2.mean(), h_left.mean(), h_right.mean())
         # 3. Граничные условия
 
-        t_phys = 1.0 - self.t_grid_norm
+        t_phys = self.t_grid_norm * self.bs.T
         #print(self.bs.far_field_bc(self.S_grid_norm, t_phys ).max())
-        #loss_Smax = self.masked_mean((V - self.bs.far_field_bc(self.S_phys, t_phys)) ** 2, self.mask_Smax)
+        loss_Smax = self.masked_mean((V - self.bs.far_field_bc(self.S_phys, t_phys)) ** 2, self.mask_Smax)
         #print(self.bs.far_field_bc(self.S_grid_norm, t_phys))
-        loss_S0 = self.masked_mean(V ** 2, self.mask_S0) * 100
-        loss_boundary = loss_S0 #+ loss_Smax
+        loss_S0 = self.masked_mean(V.abs(), self.mask_S0)
+        loss_boundary = loss_S0 + loss_Smax
         #violation_loss = ((torch.relu(dV_dtau - 1))**2).mean()
         #violation_loss = torch.mean(torch.relu(-dV_dS)) + torch.mean(torch.relu(-d2V_dS2))
 
-        #violation_loss += (torch.mean(torch.relu(-dV_dS)) +
-         #                 torch.mean(torch.relu(-d2V_dS2)) + torch.mean(torch.relu(dV_dt)))
+        #violation_loss = (torch.mean(torch.relu(-dV_dS)) +
+        #                  torch.mean(torch.relu(-d2V_dS2)) + torch.mean(torch.relu(dV_dtau_mid)))
         total = (self.lambda_pde * pde_loss +
-                 self.lambda_bc * loss_boundary) #+
-                 #self.lambda_violation * violation_loss)
+                 self.lambda_bc * loss_boundary) #self.lambda_violation * violation_loss)
 
         #self.lambda_violation * (violation_loss))
 

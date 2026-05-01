@@ -97,7 +97,7 @@ class PiCNN_BlackScholes(nn.Module):
         tau_norm = x[:, 1:2, :, :]
         # Жесткое условие: V(S, tau=0) = payoff(S) ровно
         payoff = torch.clamp(S_norm - self.bs.K / self.bs.S_max, min=0.0)
-        V = tau_norm * nn_out + payoff
+        V = tau_norm * (nn_out) + payoff
         return V
 
 
@@ -138,7 +138,7 @@ class Trainer:
         )
 
 
-        self.optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+        self.optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-7)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=1e-10)
 
         self.history = {"loss": [], "pde": [], "boundary": [], "T": []}

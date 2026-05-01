@@ -422,7 +422,7 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
     # Black‑Scholes parameters
     bs = BSParams(
-        r=0.08, sigma=0.4, K=100.0, T=3.0, S_max=300.0, option="call"
+        r=0.08, sigma=0.3, K=100.0, T=2.0, S_max=300.0, option="call"
     )
 
     # Grid resolution (N_S × N_t)
@@ -435,8 +435,8 @@ if __name__ == "__main__":
     # FIXED: Adjusted hyperparameters
     trainer = Trainer(
         model, bs, grid_shape=grid_shape,
-        lr=1e-4, epochs=7000, device=device,  # More epochs
-        lambda_pde=10.0, lambda_bc=30, lambda_tc=30.0, lambda_violation= 1.0
+        lr=1e-3, epochs=5000, device=device,  # More epochs
+        lambda_pde=10.0, lambda_bc=30.0, lambda_tc=30.0, lambda_violation= 1.0
     )
 
     print("Training PI‑CNN for Black–Scholes")
